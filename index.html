@@ -42,6 +42,19 @@ header{position:sticky;top:0;z-index:50;background:rgba(18,22,28,.93);backdrop-f
 .hbar h1 span{color:var(--plate-yellow)}
 .clock{font-family:var(--display);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink-dim)}
 .clock.run{color:var(--plate-yellow)}
+.today{padding:0 0 10px;display:flex;align-items:center;gap:10px}
+.today .dt{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);flex:1}
+.today .dt b{color:var(--ink);font-weight:600}
+.saved{font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--plate-green);opacity:0;transition:opacity .25s;flex:0 0 auto;margin-right:2px}
+.saved.on{opacity:1}
+.synced{font-size:12px;color:var(--ink-dim);padding:2px 0 10px}
+.synced b{color:var(--plate-green);font-weight:600}
+.synced.stale b{color:var(--plate-yellow)}
+.unit{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:0 0 auto}
+.unit button{min-height:32px;padding:0 13px;font-family:var(--display);font-size:14px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);background:var(--surface)}
+.unit button[aria-pressed="true"]{background:var(--plate-yellow);color:#12161c}
 
 /* ---------- pickers ---------- */
 .picker{display:flex;gap:8px;padding-bottom:12px;overflow-x:auto;scrollbar-width:none}
@@ -76,6 +89,13 @@ header{position:sticky;top:0;z-index:50;background:rgba(18,22,28,.93);backdrop-f
 .ex-sub{padding:0 13px 10px;font-size:12px;color:var(--ink-dim);letter-spacing:.03em}
 .ex-sub b{color:var(--plate-blue);font-weight:600}
 .ex-sub .none{color:var(--ink-faint)}
+.cue{padding:0 13px 10px;font-size:12.5px;line-height:1.5;color:var(--ink-dim);
+  border-left:2px solid var(--plate-blue);margin:0 13px 10px;padding:2px 0 2px 10px}
+.formlink{display:inline-flex;align-items:center;gap:6px;margin:0 13px 11px;min-height:36px;padding:0 12px;
+  border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink-dim);
+  font-family:var(--display);font-size:14px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+  text-decoration:none}
+.formlink svg{width:14px;height:14px;fill:var(--plate-red)}
 
 .setrow{display:grid;grid-template-columns:26px 1fr 1fr;gap:7px;padding:0 13px 9px;align-items:center}
 .setrow.eff{grid-template-columns:26px 1fr;padding-bottom:11px}
@@ -173,6 +193,14 @@ nav button[aria-current="true"]{color:var(--plate-yellow)}
       <h1>Training<span>.</span>Log</h1>
       <div class="clock" id="sessionClock">--:--</div>
     </div>
+    <div class="today">
+      <div class="dt" id="todayLine">—</div>
+      <div class="saved" id="savedTag">Saved</div>
+      <div class="unit" role="group" aria-label="Weight unit">
+        <button id="unitKg" aria-pressed="true">kg</button>
+        <button id="unitLb" aria-pressed="false">lb</button>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -188,6 +216,11 @@ nav button[aria-current="true"]{color:var(--plate-yellow)}
     </div>
     <div id="deloadNote"></div>
     <div id="exList"></div>
+    <div class="card">
+      <h3>Session notes</h3>
+      <p class="hint">Anything your coach should know about today — how it felt, what you cut, what hurt.</p>
+      <div class="f"><label>Notes for this session</label><textarea id="sessNotes" placeholder="—"></textarea></div>
+    </div>
     <button class="btn" id="btnFinish">End session</button>
     <div class="foot">Everything saves the moment you type it. No save button, no account, works offline.</div>
   </section>
@@ -240,6 +273,19 @@ nav button[aria-current="true"]{color:var(--plate-yellow)}
       <h3>Send to coach</h3>
       <p class="hint">Copies your last 7 days and your most recent session as plain text. Paste it into chat.</p>
       <button class="btn primary" id="btnCoach">Copy coach summary</button>
+    </div>
+
+    <div class="card">
+      <h3>Google Sheet sync</h3>
+      <p class="hint">Optional. Pushes every set and every daily entry into your own Google Sheet. Setup steps are in the README.</p>
+      <div class="f"><label>Web app URL</label><input id="syncUrl" placeholder="https://script.google.com/macros/s/.../exec"></div>
+      <div class="f"><label>Secret word</label><input id="syncTok" placeholder="—"></div>
+      <div class="synced" id="syncState">Not connected yet.</div>
+      <div class="row2">
+        <button class="btn primary" id="btnSync">Sync now</button>
+        <button class="btn" id="btnPing">Test link</button>
+      </div>
+      <button class="btn" id="btnAuto">Auto-sync: off</button>
     </div>
 
     <div class="card">
@@ -303,40 +349,70 @@ nav button[aria-current="true"]{color:var(--plate-yellow)}
 /* =============== program =============== */
 const DAYS = [
   {n:1, name:"Push", ex:[
-    {x:"Barbell Incline Bench Press", reps:"5–8",   rest:180},
-    {x:"Dumbbell Bench Press",        reps:"8–12",  rest:120},
-    {x:"Cable Cross Over",            reps:"12–15", rest:90},
-    {x:"Dumbbell Lateral Raise",      reps:"12–15", rest:0,  pair:"A"},
-    {x:"Cable Rope Overhead Tricep Ext", reps:"12–15", rest:60, pair:"A"},
-    {x:"Cable Rope Crunch",           reps:"15–20", rest:45}]},
+    {x:"Barbell Incline Bench Press", reps:"5–8",   rest:180,
+     c:"Bench at 30°. Touch the same spot just below the collarbone every rep, elbows about 60° from the torso."},
+    {x:"Dumbbell Bench Press",        reps:"8–12",  rest:120,
+     c:"Wrists stacked over elbows. Lower until you feel the chest stretch. Don't clash the bells at the top."},
+    {x:"Cable Cross Over",            reps:"12–15", rest:90,
+     c:"Pulleys at shoulder height. Soft elbows, wrists cross past each other, hold the squeeze one second."},
+    {x:"Dumbbell Lateral Raise",      reps:"12–15", rest:0,  pair:"A",
+     c:"Lead with the elbow, thumb slightly down, stop at shoulder height. No swinging from the hips."},
+    {x:"Cable Rope Overhead Tricep Ext", reps:"12–15", rest:60, pair:"A",
+     c:"Elbows point forward and stay still. Only the forearms move."},
+    {x:"Cable Rope Crunch",           reps:"15–20", rest:45,
+     c:"Round the spine and crunch ribs toward hips. Hips stay fixed — this is not a hinge."}]},
   {n:2, name:"Pull", ex:[
-    {x:"Barbell Bent Over Row",       reps:"5–8",   rest:180},
-    {x:"Lat Pulldown Normal Grip",    reps:"8–12",  rest:120},
-    {x:"Cable Seated Row",            reps:"8–12",  rest:90},
-    {x:"Cable Rope Straight Arm Pulldown", reps:"12–15", rest:0, pair:"A"},
-    {x:"Rear Delt Fly Machine",       reps:"12–15", rest:60, pair:"A"},
-    {x:"Barbell Bicep Curl",          reps:"10–15", rest:60}]},
+    {x:"Barbell Bent Over Row",       reps:"5–8",   rest:180,
+     c:"Torso fixed at about 45°. Pull to the belly button. If your torso rises to finish a rep, the set is over."},
+    {x:"Lat Pulldown Normal Grip",    reps:"8–12",  rest:120,
+     c:"Drive the elbows down and back rather than pulling with the hands. Chest up, bar to the collarbone."},
+    {x:"Cable Seated Row",            reps:"8–12",  rest:90,
+     c:"Chest tall, pull to the lower ribs, let the shoulder blades spread fully on the way out."},
+    {x:"Cable Rope Straight Arm Pulldown", reps:"12–15", rest:0, pair:"A",
+     c:"Arms nearly locked. Hinge slightly and sweep the rope down to your thighs using the lats."},
+    {x:"Rear Delt Fly Machine",       reps:"12–15", rest:60, pair:"A",
+     c:"Loose grip, lead with the elbows, stop when the arms reach the line of your torso."},
+    {x:"Barbell Bicep Curl",          reps:"10–15", rest:60,
+     c:"Elbows pinned to your sides, no hip swing. Your biceps are pre-fatigued here — go lighter and stricter."}]},
   {n:3, name:"Legs", ex:[
-    {x:"Barbell Back Squat",          reps:"5–8",   rest:180, cap:1},
-    {x:"Barbell Romanian Deadlift",   reps:"8–12",  rest:120, cap:1},
-    {x:"Leg Press",                   reps:"10–15", rest:90},
-    {x:"Calf Raise on Leg Press",     reps:"12–20", rest:45},
-    {x:"Seated Hamstring Curl Machine", reps:"12–15", rest:0, pair:"A"},
-    {x:"Seated Leg Extension Machine",  reps:"12–15", rest:60, pair:"A"}]},
+    {x:"Barbell Back Squat",          reps:"5–8",   rest:180, cap:1,
+     c:"Brace before you descend. Knees track over the toes. Hips and chest rise together, not hips first."},
+    {x:"Barbell Romanian Deadlift",   reps:"8–12",  rest:120, cap:1,
+     c:"Hip hinge with soft knees. Bar stays against the legs. Stop when the hamstrings stop lengthening, not when the plates touch."},
+    {x:"Leg Press",                   reps:"10–15", rest:90,
+     c:"Feet shoulder width. Stop the descent before your lower back rounds off the pad."},
+    {x:"Calf Raise on Leg Press",     reps:"12–20", rest:45,
+     c:"Full stretch at the bottom, one-second pause at the top. Slow, never bouncing."},
+    {x:"Seated Hamstring Curl Machine", reps:"12–15", rest:0, pair:"A",
+     c:"Strap the torso down. Squeeze hard at the bottom, control the return."},
+    {x:"Seated Leg Extension Machine",  reps:"12–15", rest:60, pair:"A",
+     c:"Pause a beat at the top. Lower slowly — the lowering half is where the growth is."}]},
   {n:4, name:"Push", ex:[
-    {x:"Dumbbell Incline Bench Press", reps:"8–12", rest:0,  pair:"A"},
-    {x:"Row Machine",                  reps:"8–12", rest:150, pair:"A"},
-    {x:"Parallel Bar Dip",             reps:"6–10", rest:120},
-    {x:"Peck Deck",                    reps:"12–15", rest:0, pair:"B"},
-    {x:"Cable Lateral Raise",          reps:"12–15", rest:60, pair:"B"},
-    {x:"Hanging Leg Raise",            reps:"10–15", rest:45}]},
+    {x:"Dumbbell Incline Bench Press", reps:"8–12", rest:0,  pair:"A",
+     c:"30° bench. Control the stretch at the bottom and drive through the mid chest."},
+    {x:"Row Machine",                  reps:"8–12", rest:150, pair:"A",
+     c:"Chest stays against the pad the whole set. Pull with the elbows, not the hands."},
+    {x:"Parallel Bar Dip",             reps:"6–10", rest:120,
+     c:"Lean forward 30° for chest, stay upright for triceps. Pick one and keep it consistent so the log means something."},
+    {x:"Peck Deck",                    reps:"12–15", rest:0, pair:"B",
+     c:"Fixed elbow angle throughout. Slow on the way out, one-second squeeze at the close."},
+    {x:"Cable Lateral Raise",          reps:"12–15", rest:60, pair:"B",
+     c:"Cable running behind you, lean away slightly. Elbow leads, stop at shoulder height."},
+    {x:"Hanging Leg Raise",            reps:"10–15", rest:45,
+     c:"Curl the pelvis up at the top instead of swinging the legs to parallel. Kill the swing before the next rep."}]},
   {n:5, name:"Pull", ex:[
-    {x:"Weighted Pull Up",            reps:"5–8",   rest:180},
-    {x:"Dumbbell Single Arm Row",     reps:"8–12",  rest:90},
-    {x:"Reverse Grip Lat Pulldown",   reps:"8–12",  rest:120},
-    {x:"Row Machine",                 reps:"8–12",  rest:90},
-    {x:"Cable Face Pull",             reps:"15–20", rest:0, pair:"A"},
-    {x:"Dumbbell Incline Bicep Curl", reps:"10–15", rest:60, pair:"A"}]}
+    {x:"Weighted Pull Up",            reps:"5–8",   rest:180,
+     c:"Dead hang start with active shoulders. Chin clearly over the bar, controlled descent."},
+    {x:"Dumbbell Single Arm Row",     reps:"8–12",  rest:90,
+     c:"Flat back, pull to the hip not the shoulder. Alternate arms with no rest between sides."},
+    {x:"Reverse Grip Lat Pulldown",   reps:"8–12",  rest:120,
+     c:"Underhand at shoulder width. Elbows drive down and back, bar to the upper chest."},
+    {x:"Row Machine",                 reps:"8–12",  rest:90,
+     c:"Same as Day 4 — chest pinned to the pad, elbows lead, full stretch on every rep."},
+    {x:"Cable Face Pull",             reps:"15–20", rest:0, pair:"A",
+     c:"Go light. Pull to eye level and rotate the hands back at the end. This is the one keeping your shoulders healthy."},
+    {x:"Dumbbell Incline Bicep Curl", reps:"10–15", rest:60, pair:"A",
+     c:"Lie back on a 45–60° bench and let the arms hang behind the body for a full stretch."}]}
 ];
 const WEEKS = 12, DELOADS = [6,12];
 const EFFORTS = [
@@ -350,13 +426,23 @@ const EFFORTS = [
 
 /* =============== storage =============== */
 const K = "trainlog.v1";
-const blank = () => ({sets:{}, daily:{}, start:"2026-08-10"});
+const blank = () => ({sets:{}, daily:{}, notes:{}, start:"2026-08-10", unit:"kg",
+                      sync:{url:"", tok:"", auto:false, last:null}});
 let DB = blank();
 try { const raw = localStorage.getItem(K); if (raw) DB = Object.assign(blank(), JSON.parse(raw)); } catch(e){}
-let saveT = null;
+if (!DB.sync) DB.sync = {url:"", tok:"", auto:false, last:null};
+let saveT = null, autoT = null;
+function flashSaved(){
+  const el = document.getElementById("savedTag"); if (!el) return;
+  el.classList.add("on"); clearTimeout(el._t);
+  el._t = setTimeout(()=>el.classList.remove("on"), 900);
+}
 function save(){ clearTimeout(saveT); saveT = setTimeout(()=>{
-  try { localStorage.setItem(K, JSON.stringify(DB)); }
+  try { localStorage.setItem(K, JSON.stringify(DB)); flashSaved(); }
   catch(e){ toast("Storage full — export a backup"); }
+  if (DB.sync && DB.sync.auto && DB.sync.url){
+    clearTimeout(autoT); autoT = setTimeout(()=>pushSheet(true), 8000);
+  }
 }, 200); }
 
 /* =============== helpers =============== */
@@ -377,6 +463,20 @@ function e1rm(load, reps){
   if (load == null || reps == null || reps <= 0) return null;
   return load * (1 + reps/30);
 }
+
+/* ---- units: everything is stored in kg, displayed in the chosen unit ---- */
+const LB_PER_KG = 2.20462262;
+const unit = () => DB.unit === "lb" ? "lb" : "kg";
+const toKg   = v => v == null ? null : (unit() === "lb" ? v / LB_PER_KG : v);
+const fromKg = v => v == null ? null : (unit() === "lb" ? v * LB_PER_KG : v);
+const showKg = (v, dp) => v == null ? null : Number(fromKg(v).toFixed(dp ?? 1));
+const uLabel = () => unit().toUpperCase();
+
+/* ---- form videos: a YouTube search, so the link always resolves ---- */
+const formURL = name =>
+  "https://www.youtube.com/results?search_query=" +
+  encodeURIComponent(name + " proper form technique");
+
 function toast(msg){
   const el = $("#toast"); el.textContent = msg; el.classList.add("on");
   clearTimeout(el._t); el._t = setTimeout(()=>el.classList.remove("on"), 1900);
@@ -453,7 +553,7 @@ function lastSessionLine(d, e){
   for (let w = W-1; w >= 1; w--){
     const rows = [1,2,3].map(s => DB.sets[key(w,d,e,s)]).filter(r => r && r.load != null);
     if (rows.length){
-      return "W"+w+": " + rows.map(r => r.load+"×"+(r.reps ?? "?")).join("  ·  ");
+      return "W"+w+": " + rows.map(r => showKg(r.load)+"×"+(r.reps ?? "?")).join("  ·  ") + " " + unit();
     }
   }
   return null;
@@ -487,6 +587,7 @@ function renderDay(){
   const dt = dateFor(W, D);
   $("#dayTitle").textContent = "Day " + D + " · " + day.name;
   $("#dayMeta").innerHTML = WD[dt.getDay()] + "<br>" + iso(dt);
+  $("#sessNotes").value = DB.notes[W+"|"+D] || "";
 
   const isDeload = DELOADS.includes(W);
   $("#deloadNote").innerHTML = isDeload
@@ -512,6 +613,16 @@ function renderDay(){
       (last ? "Last time <b>" + last + "</b>" : '<span class="none">No history yet — set your baseline</span>');
     card.appendChild(sub);
 
+    if (ex.c){
+      const cue = document.createElement("div"); cue.className = "cue";
+      cue.textContent = ex.c; card.appendChild(cue);
+    }
+    const fl = document.createElement("a");
+    fl.className = "formlink"; fl.href = formURL(ex.x);
+    fl.target = "_blank"; fl.rel = "noopener noreferrer";
+    fl.innerHTML = '<svg viewBox="0 0 24 24"><path d="M21.6 7.2a2.8 2.8 0 0 0-2-2C17.9 4.8 12 4.8 12 4.8s-5.9 0-7.6.4a2.8 2.8 0 0 0-2 2C2 8.9 2 12 2 12s0 3.1.4 4.8a2.8 2.8 0 0 0 2 2c1.7.4 7.6.4 7.6.4s5.9 0 7.6-.4a2.8 2.8 0 0 0 2-2C22 15.1 22 12 22 12s0-3.1-.4-4.8zM10 15.2V8.8l5.2 3.2-5.2 3.2z"/></svg>Watch the form';
+    card.appendChild(fl);
+
     const setCount = isDeload ? 2 : 3;
     for (let s = 1; s <= setCount; s++){
       const rec = DB.sets[key(W,D,e,s)] || {};
@@ -520,7 +631,7 @@ function renderDay(){
       const r1 = document.createElement("div"); r1.className = "setrow";
       r1.innerHTML =
         '<div class="snum">'+s+'</div>' +
-        '<div class="fld"><label>Load kg</label><input inputmode="decimal" data-f="load" placeholder="'+(prev ? prev.load : "—")+'" value="'+(rec.load ?? "")+'"></div>' +
+        '<div class="fld"><label>Load '+uLabel()+'</label><input inputmode="decimal" data-f="load" placeholder="'+(prev ? showKg(prev.load) : "—")+'" value="'+(rec.load != null ? showKg(rec.load) : "")+'"></div>' +
         '<div class="fld"><label>Reps</label><input inputmode="numeric" data-f="reps" placeholder="'+(prev ? prev.reps : "—")+'" value="'+(rec.reps ?? "")+'"></div>';
       card.appendChild(r1);
 
@@ -540,11 +651,11 @@ function renderDay(){
 
       const est = document.createElement("div"); est.className = "e1rm";
       const v = e1rm(num(rec.load), num(rec.reps));
-      est.textContent = v ? "est 1RM " + v.toFixed(1) + " kg" : "";
+      est.textContent = v ? "est 1RM " + showKg(v) + " " + unit() : "";
       card.appendChild(est);
 
       const commit = () => {
-        const load = num(r1.querySelector('[data-f="load"]').value);
+        const load = toKg(num(r1.querySelector('[data-f="load"]').value));
         const reps = num(r1.querySelector('[data-f="reps"]').value);
         const eff  = sel.value;
         const k = key(W,D,e,s);
@@ -552,7 +663,7 @@ function renderDay(){
         else DB.sets[k] = {load, reps, eff, ts: Date.now()};
         save();
         const nv = e1rm(load, reps);
-        est.textContent = nv ? "est 1RM " + nv.toFixed(1) + " kg" : "";
+        est.textContent = nv ? "est 1RM " + showKg(nv) + " " + unit() : "";
         sel.classList.toggle("set", !!eff);
         sel.classList.toggle("fail", eff === "F");
         const n = [1,2,3].filter(x => DB.sets[key(W,D,e,x)]?.load != null).length;
@@ -573,6 +684,33 @@ function renderDay(){
     list.appendChild(card);
   });
 }
+
+$("#sessNotes").addEventListener("input", e => {
+  const k = W+"|"+D, v = e.target.value.trim();
+  if (v) DB.notes[k] = v; else delete DB.notes[k];
+  save();
+});
+
+/* today's date in the header */
+function renderToday(){
+  const t = new Date();
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  $("#todayLine").innerHTML = "Today · <b>" + WD[t.getDay()] + ", " +
+    t.getDate() + " " + months[t.getMonth()] + " " + t.getFullYear() + "</b>";
+}
+
+/* kg / lb toggle */
+function renderUnit(){
+  $("#unitKg").setAttribute("aria-pressed", unit() === "kg");
+  $("#unitLb").setAttribute("aria-pressed", unit() === "lb");
+}
+function setUnit(u){
+  if (unit() === u) return;
+  DB.unit = u; save(); renderUnit(); renderDay();
+  toast("Now logging in " + u.toUpperCase());
+}
+$("#unitKg").addEventListener("click", ()=>setUnit("kg"));
+$("#unitLb").addEventListener("click", ()=>setUnit("lb"));
 
 $("#btnFinish").addEventListener("click", ()=>{
   const mins = sessionStart ? Math.round((Date.now()-sessionStart)/60000) : 0;
@@ -688,8 +826,8 @@ function allSetRows(){
       const dt = dateFor(w, day.n);
       const est = e1rm(r.load, r.reps);
       rows.push([iso(dt), WD[dt.getDay()], "W"+w, "Day "+day.n, ex.x, s,
-                 r.load ?? "", r.reps ?? "", effText(r.eff), rirOf(r.eff),
-                 est ? est.toFixed(1) : ""]);
+                 showKg(r.load) ?? "", unit(), r.reps ?? "", effText(r.eff), rirOf(r.eff),
+                 est ? showKg(est) : "", DB.notes[w+"|"+day.n] || ""]);
     }
   }));
   return rows;
@@ -711,7 +849,7 @@ const csv = m => m.map(r => r.map(c => {
 $("#btnCsvLift").addEventListener("click", ()=>{
   const rows = allSetRows();
   if (!rows.length) return toast("Nothing logged yet");
-  download("lift-log.csv", csv([["Date","Weekday","Week","Day","Exercise","Set","Load kg","Reps","Effort","RIR","Est 1RM"]].concat(rows)));
+  download("lift-log.csv", csv([["Date","Weekday","Week","Day","Exercise","Set","Load","Unit","Reps","Effort","RIR","Est 1RM","Session notes"]].concat(rows)));
   toast("Lift log exported");
 });
 $("#btnCsvDaily").addEventListener("click", ()=>{
@@ -747,11 +885,13 @@ $("#btnCoach").addEventListener("click", async ()=>{
   lines.push("", "MOST RECENT SESSION");
   if (!all.length) lines.push("  nothing logged");
   else {
-    const lastDate = all[all.length-1][0];
-    lines.push("  " + lastDate + " — " + all[all.length-1][3]);
+    const L = all[all.length-1];
+    const lastDate = L[0];
+    lines.push("  " + lastDate + " — " + L[3] + " (" + L[2] + ")");
     all.filter(r => r[0] === lastDate).forEach(r =>
-      lines.push("  " + r[4] + " · set " + r[5] + " · " + r[6] + "kg × " + r[7] +
-                 " · " + (r[8] || "no effort logged") + " · est1RM " + r[10]));
+      lines.push("  " + r[4] + " · set " + r[5] + " · " + r[6] + r[7] + " × " + r[8] +
+                 " · " + (r[9] || "no effort logged") + " · est1RM " + r[11] + r[7]));
+    if (L[12]) lines.push("  Session notes: " + L[12]);
   }
   const text = lines.join("\n");
   try { await navigator.clipboard.writeText(text); toast("Copied — paste into chat"); }
@@ -764,8 +904,70 @@ $("#btnCoach").addEventListener("click", async ()=>{
   }
 });
 
-$("#btnBackup").addEventListener("click", ()=>{
-  download("training-backup-" + iso(new Date()) + ".json", JSON.stringify(DB), "application/json");
+/* =============== google sheet sync =============== */
+function dailyRows(){
+  return Object.keys(DB.daily).sort().map(k => {
+    const r = DB.daily[k], dt = new Date(k);
+    return [k, WD[dt.getDay()], r.weight??"", r.sleep??"", r.hunger??"", r.fatigue??"",
+            r.stress??"", r.steps??"", r.kcal??"", r.protein??"", r.fiber??"", r.rpe??"", r.notes??""];
+  });
+}
+function noteRows(){
+  return Object.keys(DB.notes).map(k => {
+    const [w,d] = k.split("|").map(Number);
+    const dt = dateFor(w,d);
+    return [iso(dt), WD[dt.getDay()], "W"+w, "Day "+d, DB.notes[k]];
+  }).sort((a,b)=>a[0] < b[0] ? -1 : 1);
+}
+function syncPayload(){
+  return {
+    token: DB.sync.tok || "",
+    unit: unit(),
+    start: DB.start,
+    sentAt: new Date().toISOString(),
+    lift: allSetRows(),
+    daily: dailyRows(),
+    notes: noteRows()
+  };
+}
+function renderSync(){
+  $("#syncUrl").value = DB.sync.url || "";
+  $("#syncTok").value = DB.sync.tok || "";
+  $("#btnAuto").textContent = "Auto-sync: " + (DB.sync.auto ? "on" : "off");
+  const el = $("#syncState");
+  if (!DB.sync.url){ el.className = "synced"; el.textContent = "Not connected yet."; return; }
+  if (!DB.sync.last){ el.className = "synced stale"; el.innerHTML = "Connected — <b>nothing sent yet</b>"; return; }
+  const mins = Math.round((Date.now() - DB.sync.last)/60000);
+  const when = mins < 1 ? "just now" : mins < 60 ? mins + " min ago"
+             : Math.round(mins/60) + " hr ago";
+  el.className = "synced"; el.innerHTML = "Last sent <b>" + when + "</b>";
+}
+function pushSheet(quiet){
+  if (!DB.sync.url){ if (!quiet) toast("Add your web app URL first"); return; }
+  const body = JSON.stringify(syncPayload());
+  try {
+    // text/plain keeps this a simple request; no-cors means we can't read the
+    // reply, so success is confirmed by looking at the sheet, not by the app.
+    fetch(DB.sync.url, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body})
+      .catch(()=>{});
+    DB.sync.last = Date.now(); save(); renderSync();
+    if (!quiet) toast("Sent — check your sheet");
+  } catch(e){ if (!quiet) toast("Could not send"); }
+}
+$("#syncUrl").addEventListener("input", e => { DB.sync.url = e.target.value.trim(); save(); renderSync(); });
+$("#syncTok").addEventListener("input", e => { DB.sync.tok = e.target.value.trim(); save(); });
+$("#btnSync").addEventListener("click", ()=>pushSheet(false));
+$("#btnAuto").addEventListener("click", ()=>{
+  if (!DB.sync.url) return toast("Add your web app URL first");
+  DB.sync.auto = !DB.sync.auto; save(); renderSync();
+  toast(DB.sync.auto ? "Auto-sync on" : "Auto-sync off");
+});
+$("#btnPing").addEventListener("click", ()=>{
+  if (!DB.sync.url) return toast("Add your web app URL first");
+  window.open(DB.sync.url, "_blank", "noopener");
+});
+
+$("#btnBackup").addEventListener("click", ()=>{  download("training-backup-" + iso(new Date()) + ".json", JSON.stringify(DB), "application/json");
   toast("Backup saved");
 });
 $("#btnRestore").addEventListener("click", ()=>$("#fileIn").click());
@@ -777,7 +979,7 @@ $("#fileIn").addEventListener("change", ev => {
       const d = JSON.parse(rd.result);
       if (!d || typeof d !== "object" || !("sets" in d)) throw 0;
       DB = Object.assign(blank(), d); save(); renderAll(); renderDaily();
-      $("#startDate").value = DB.start; toast("Backup restored");
+      $("#startDate").value = DB.start; renderUnit(); renderSync(); toast("Backup restored");
     } catch(e){ toast("That file isn't a backup"); }
   };
   rd.readAsText(f); ev.target.value = "";
@@ -790,8 +992,11 @@ $("#startDate").addEventListener("change", e => {
 $("#btnWipe").addEventListener("click", ()=>{
   if (!confirm("Erase every set and every daily entry? This cannot be undone.")) return;
   if (!confirm("Last check — this deletes everything.")) return;
-  DB = blank(); save(); W = 1; D = 1; DSEL = iso(new Date());
-  renderAll(); renderDaily(); $("#startDate").value = DB.start; toast("All data erased");
+  const keepSync = DB.sync;
+  DB = blank(); DB.sync = keepSync; DB.sync.last = null;
+  save(); W = 1; D = 1; DSEL = iso(new Date());
+  renderAll(); renderDaily(); renderSync();
+  $("#startDate").value = DB.start; toast("All data erased");
 });
 function renderStats(){
   $("#statSets").textContent = allSetRows().length;
@@ -804,15 +1009,22 @@ document.querySelectorAll("nav button").forEach(b => b.addEventListener("click",
   document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-current", x === b));
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("on", s.id === "v-"+v));
   if (v === "daily") renderDaily();
-  if (v === "data") renderStats();
+  if (v === "data"){ renderStats(); renderSync(); }
   window.scrollTo(0,0);
 }));
 
 /* =============== boot =============== */
 function renderAll(){ renderPickers(); renderDay(); }
 $("#startDate").value = DB.start;
+renderToday(); renderUnit(); renderSync();
 renderAll(); renderDaily();
 window.addEventListener("beforeunload", ()=>{ try{ localStorage.setItem(K, JSON.stringify(DB)); }catch(e){} });
+document.addEventListener("visibilitychange", ()=>{
+  if (document.visibilityState === "hidden"){
+    try{ localStorage.setItem(K, JSON.stringify(DB)); }catch(e){}
+    if (DB.sync && DB.sync.auto && DB.sync.url) pushSheet(true);
+  }
+});
 </script>
 </body>
 </html>
